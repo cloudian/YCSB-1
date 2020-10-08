@@ -18,13 +18,17 @@
  */
 package site.ycsb.db;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
+import java.util.Random;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.amazonaws.util.IOUtils;
 import site.ycsb.ByteArrayByteIterator;
@@ -32,6 +36,7 @@ import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
+import site.ycsb.workloads.CoreWorkload;
 
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.auth.*;
@@ -75,6 +80,7 @@ public class S3Client extends DB {
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
   private static boolean rangeReadEnabled = false;
   private static long rangeReadSize = 0;
+  private static long rangeReadObjectSize = 0;
 
   /**
    * Cleanup any state for this storage. Called once per S3 instance;
@@ -216,6 +222,13 @@ public class S3Client extends DB {
           }
           rangeReadSize = Long.parseLong(rangeReadSizeString);
           System.out.println("Range Read Size = " + rangeReadSize);
+          
+          String rangeReadObjectSizeString = props.getProperty(CoreWorkload.FIELD_LENGTH_PROPERTY);
+          if (rangeReadObjectSizeString == null) {
+            rangeReadObjectSizeString = propsCL.getProperty(CoreWorkload.FIELD_LENGTH_PROPERTY, "0");
+          }
+          rangeReadObjectSize = Long.parseLong(rangeReadObjectSizeString);
+          System.out.println("Range Read Object Size = " + rangeReadObjectSize);
 
         } catch (Exception e) {
           System.err.println("The file properties doesn't exist " + e.toString());
@@ -225,6 +238,9 @@ public class S3Client extends DB {
           if (rangeReadEnabled) {
             if (rangeReadSize == 0) {
               throw new Exception("Range read size must be greater than zero when rangeReadEnabled is true");
+            }
+            if (rangeReadSize > rangeReadObjectSize) {
+              throw new Exception("Range read size must be smaller than the fieldlength");
             }
           }
           System.out.println("Inizializing the S3 connection");
@@ -441,7 +457,8 @@ public class S3Client extends DB {
     }
     
     if (rangeReadEnabled) {
-      getObjectRequest.setRange(0, rangeReadSize);
+      long[] positions = getRangeReadPositions(rangeReadSize, rangeReadObjectSize);
+      getObjectRequest.setRange(positions[0], positions[1]);
     }
 
     return s3Client.getObject(getObjectRequest);
@@ -501,5 +518,14 @@ public class S3Client extends DB {
       result.add(resultTemp);
     }
     return Status.OK;
+  }
+  
+  private long[] getRangeReadPositions(long readSize, long objectSize) {
+    long[] positions = new long[2];
+    long highestStartPosition = objectSize - readSize;
+    Random r = new Random();
+    positions[0] = Math.abs(r.nextLong()) % (highestStartPosition + 1);
+    positions[1] = positions[0] + (readSize - 1);
+    return positions;
   }
 }
