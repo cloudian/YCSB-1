@@ -81,6 +81,7 @@ public class S3Client extends DB {
   private static boolean rangeReadEnabled = false;
   private static long rangeReadSize = 0;
   private static long rangeReadObjectSize = 0;
+  private static boolean randomRangeReadEnabled = true;
 
   /**
    * Cleanup any state for this storage. Called once per S3 instance;
@@ -215,6 +216,13 @@ public class S3Client extends DB {
           }
           rangeReadEnabled = Boolean.parseBoolean(rangeReadEnabledString);
           System.out.println("Range Read Enabled = " + rangeReadEnabled);
+          
+          String randomRangeReadEnabledString = props.getProperty("s3.randomRangeReadEnabled");
+          if (randomRangeReadEnabledString == null) {
+            randomRangeReadEnabledString = propsCL.getProperty("s3.randomRangeReadEnabled", "true");
+          }
+          randomRangeReadEnabled = Boolean.parseBoolean(randomRangeReadEnabledString);
+          System.out.println("Random Range Reads Enabled = " + randomRangeReadEnabled);
 
           String rangeReadSizeString = props.getProperty("s3.rangeReadSize");
           if (rangeReadSizeString == null) {
@@ -457,8 +465,12 @@ public class S3Client extends DB {
     }
     
     if (rangeReadEnabled) {
-      long[] positions = getRangeReadPositions(rangeReadSize, rangeReadObjectSize);
-      getObjectRequest.setRange(positions[0], positions[1]);
+      if(randomRangeReadEnabled) {
+        long[] positions = getRangeReadPositions(rangeReadSize, rangeReadObjectSize);
+        getObjectRequest.setRange(positions[0], positions[1]);
+      } else {
+        getObjectRequest.setRange(0, rangeReadSize);
+      }
     }
 
     return s3Client.getObject(getObjectRequest);
